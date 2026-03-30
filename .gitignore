@@ -1,0 +1,29 @@
+# Rust / Cargo（含子目录中的 crate，如 playground/rust_demo）
+target/
+**/*.rs.bk
+*.pdb
+*.dll.exp
+*.ilk
+
+# 操作系统
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 编辑器与临时文件
+.idea/
+*.swp
+*.swo
+*~
+*.orig
+
+# 环境变量与密钥（勿提交）
+.env
+.env.local
+.env.*.local
+*.pem
+
+# 日志与缓存
+*.log
+.cache/
