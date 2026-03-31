@@ -1,5 +1,32 @@
 # Rust 学习笔记
 
+## Rust 基础 TIP
+
+### Rust 项目结构
+
+1、`main.rs` 或者 `lib.rs` 是项目根（`crate::`）；
+2、一个 `.rs` 文件 = 一个模块；
+3、一个文件夹 = 一个模块组；
+4、如果想让文件能被外部访问，需要添加 `pub` 在 `mod` 中声明；
+5、导入用 `use 路径::名称;`，根路径为 `crate::`。
+
+- `crate::`从项目根开始
+- `self::`从当前模块开始
+- `super::`从父模块开始
+
+```shell
+your_project/
+├── Cargo.toml
+└── src/
+    ├── main.rs               # 项目根 crate::
+    ├── utils.rs              # 模块 crate::utils
+    ├── config.rs             # 模块 crate::config
+    └── data/                 # 文件夹模块
+        ├── mod.rs            # 文件夹入口（必须）
+        ├── list.rs           # crate::data::list
+        └── user.rs           # crate::data::user
+```
+
 ## STAGE_1：所有权（Ownership）与 借用（Borrowing）
 
 ### 所有权的转移
@@ -362,3 +389,269 @@ fn main() {
     notify(&article); // 正确！NewsArticle 也实现了 Summary
 }
 ```
+
+## STAGE_4：错误处理（Error Handling）
+
+### 不可空值与 `Option<T>`
+
+Rust 没有 `null`，如果一个值可能不存在，就必须用 `Option<T>` 枚举，它有两个表示：`Some(T)` 和 `None`。
+
+```rust
+fn main() {
+    // Some(5) 表示有一个值，是 5
+    let some_number = Some(5);
+    
+    // None 表示没有值
+    let absent_number: Option<i32> = None;
+
+    // 你不能直接把 Option<i32> 当作 i32 使用
+    // let x: i32 = some_number; // 编译错误！
+
+    // 必须处理“有值”和“无值”的情况
+    match some_number {
+        Some(val) => println!("Got a value: {}", val),
+        None => println!("Got nothing"),
+    }
+}
+```
+
+### 可恢复错误与 `Result<T, E>`
+
+当操作可能会失败的时候（比如打开文件、解析字符串），Rust 返回 `Result<T, E>` 其中 `Ok(T)` 表示操作成功返回结果值，`Err(E)` 表示操作失败包含错误信息。
+
+```rust
+use std::fs::File;
+
+fn main() {
+    // 尝试打开一个不存在的文件
+    let f = File::open("hello.txt");
+
+    let f = match f {
+        Ok(file) => {
+            println!("File opened successfully!");
+            file
+        },
+        Err(error) => {
+            panic!("Problem opening the file: {:?}", error);
+        },
+    };
+}
+```
+
+### 快速失败 `?` 运算符
+
+因为用 `match` 比较繁琐，Rust 提供了 `?` 运算符作为语法糖，如果结果是 `Ok` 就提取值，如果是 `Err` 就返回错误给调用者。
+
+```rust
+use std::fs::File;
+use std::io::{self, Read};
+
+// 这个函数返回一个 Result，错误类型是 io::Error
+fn read_username_from_file() -> Result<String, io::Error> {
+    // 如果 File::open 失败，? 会直接返回 Err，函数结束
+    // 如果成功，? 提取出 File 对象赋值给 f
+    let mut f = File::open("username.txt")?;
+    
+    let mut s = String::new();
+    
+    // 同样，如果读取失败，? 会直接返回错误
+    // 读取文件内容到字符串
+    // 失败 → return Err
+    // 成功 → 继续
+    f.read_to_string(&mut s)?;
+    
+    // 成功：把字符串包在 Ok 里返回
+    Ok(s)
+}
+
+// 注意：main 函数也可以使用 Result，但这通常用于测试或简单程序
+fn main() -> Result<(), io::Error> {
+    let username = read_username_from_file()?;
+    println!("Username: {}", username);
+    Ok(())
+}
+```
+
+## STAGE_5：泛型、特质边界与生命周期（Generics, Trait Bouds & Lifetimes）
+
+### 泛型定义
+
+Rust 的泛型会在编译的时候将代码“特化”，编译器会自动生成过分对应具体类型代码，让其在运行时没有性能损耗。
+
+```rust
+// 定义泛型结构体
+struct Point<T> {
+    x: T,
+    y: T,
+}
+
+impl<T> Point<T> {
+    // impl 中可以定义泛型方法
+    fn x(&self) -> &T{
+        &self.x
+    }
+}
+
+fn main(){
+    let integer_point = Point{x:5, y:10};
+
+    let float_point = Point{x: 1.0, y: 4.0};
+
+    println!("Integer point x: {}", integer_point.x())
+}
+```
+
+### 特质边界
+
+泛型很强大，但有时我们需要限制泛型的能力。比如，你想写一个函数找出列表中的最大值，那么列表中的类型必须是可以比较大小的。这时就需要特质边界。
+
+```rust
+use std::fmt::Display;
+
+// 场景：我们要打印一个东西，并返回它。
+// 约束 1: T 必须实现 Display (为了能打印)
+// 约束 2: T 必须实现 Clone (为了能复制返回，假设我们不移动所有权)
+
+// 写法 A：impl Trait (适合简单场景)
+fn print_and_return(item: &impl Display) {
+    println!("Displaying: {}", item);
+}
+
+// 写法 B：Trait Bound (适合复杂场景)
+fn notify<T: Display + Clone>(item: &T) {
+    println!("Announcement! {}", item);
+}
+
+// 写法 C：where 子句 (当约束太复杂时，让签名更清晰)
+fn some_function<T, U>(t: &T, u: &U) -> i32
+where
+    T: Display + Clone,
+    U: Clone + std::fmt::Debug,
+{
+    42
+}
+```
+
+### 生命周期
+
+Rust 的生命周期是告诉编译器：引用之间谁和谁活一样久，帮编译器检查安全，避免野指针。注意：返回的引用，生命周期不能超过任何一个输入引用的生命周期。(保证：返回值活着的时候，它指向的数据一定还活着)
+
+```rust
+// 错误示范：编译器不知道返回的引用 'x 还是 'y 的有效期
+// fn longest(x: &str, y: &str) -> &str { ... } // 编译报错！
+
+// 正确示范：显式告诉编译器，输入和输出共享同一个生命周期 'a
+fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {
+    if x.len() > y.len() { x } else { y }
+}
+
+fn main() {
+    let string1 = String::from("long string is long");
+    let result;
+    
+    {
+        let string2 = String::from("xyz");
+        // string1 和 string2 的生命周期都必须长于 'a
+        result = longest(&string1, &string2);
+        println!("The longest string is {}", result);
+    } // string2 在这里被 drop 了，但 result 指向 string1，所以 result 依然有效
+}
+```
+
+### 生命周期省略规则 (Lifetime Elision)
+
+不需要在所有地方都写 `'a`。Rust 有三条规则，如果编译器能推断出来，就可以省略标注。
+
+- 1、每个引用参数都有一个独立的生命周期。
+- 2、如果只有一个输入生命周期，它被赋给所有输出生命周期。
+- 3、如果有 `&self` 或 `&mut self`，输出生命周期被赋给 `self` 的生命周期。
+
+```rust
+// 'a 是 ImportantExcerpt 类型的一部分
+struct ImportantExcerpt<'a> {
+    part: &'a str,
+}
+
+impl<'a> ImportantExcerpt<'a> {
+    // 这里不需要写生命周期，因为规则 3 生效：
+    // 返回值的生命周期等于 &self 的生命周期
+    fn announce_and_return_part(&self, announcement: &str) -> &str {
+        println!("Attention: {}", announcement);
+        self.part
+    }
+}
+```
+
+## STAGE_6：智能指针与并发（Smart Pointers & Concurrency）
+
+### 智能指针
+
+智能指针不仅仅是存储地址的变量，它们还拥有元数据（如引用计数）或能力（如自动释放）。Rust 标准库提供了三种核心的智能指针，分别对应不同的场景。
+
+1、`Box<T>`：简单的堆分配，独占所有权，一般用于递归类型的数据结构上。栈上只存指针（固定大小），真正的数据存在堆上（动态大小）。
+
+- 在 64 位系统上，这个指针永远占用 8 字节；
+- 不管指向多大的数据，指针本身大小不变。
+
+```rust
+// 如果没有 Box，编译器无法确定 Cons 的大小，因为它无限递归
+enum List {
+    Cons(i32, Box<List>), // Cons 包含一个 i32 和 指向下一个 List 的指针
+    Nil,
+}
+
+use crate::List::{Cons, Nil};
+
+fn main() {
+    // 1 -> 2 -> Nil
+    let list = Cons(1, Box::new(Cons(2, Box::new(Nil))));
+}
+```
+
+2、`Rc<T>`：引用计数（单线程），所有权是共享的，一般场景比如图结构中多个节点指向同一个节点。
+
+```rust
+use std::rc::Rc;
+use crate::List::{Cons, Nil};
+
+enum List {
+    Cons(i32, Rc<List>),
+    Nil,
+}
+
+fn main() {
+    let a = Rc::new(Cons(1, Rc::new(Cons(2, Rc::new(Nil)))));
+    
+    // b 和 c 都共享 a 的所有权
+    let b = Cons(3, Rc::clone(&a)); 
+    let c = Cons(4, Rc::clone(&a));
+
+    // 打印引用计数，此时 a 被引用了 3 次 (a, b, c)
+    println!("Rc strong count: {}", Rc::strong_count(&a)); 
+}
+```
+
+3、`RefCell<T>`：有时想在一个拥有不可变引用的地方修改数据，它会将借用的检查从编译时转移到运行时。通常会用 `Rc<RefCell<T>>`，来实现多所有者且可修改。
+
+```rust
+use std::rc::Rc;
+use std::cell::RefCell;
+
+fn main() {
+    // 多个所有者共享，并且可以修改数据
+    let shared_data = Rc::new(RefCell::new(10));
+    
+    let a = Rc::clone(&shared_data);
+    let b = Rc::clone(&shared_data);
+    
+    // 任意一个所有者都能修改内部值
+    *a.borrow_mut() += 5;
+    *b.borrow_mut() += 5;
+    
+    println!("{}", shared_data.borrow()); // 20
+}
+```
+
+### 无畏并发
+
+TODO：....
