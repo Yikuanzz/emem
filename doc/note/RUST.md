@@ -654,4 +654,182 @@ fn main() {
 
 ### 无畏并发
 
-TODO：....
+#### 线程创建
+
+`thread::spawn(...)`：启动一个新线程。
+
+```rust
+use std::thread;
+use std::time::Duration;
+
+fn main() {
+    let handle = thread::spawn(|| {
+        for i in 1..5 {
+            println!("Hi number {} from the spawned thread!", i);
+            thread::sleep(Duration::from_millis(1));
+        }
+    });
+
+    for i in 1..3 {
+        println!("Hi number {} from the main thread!", i);
+        thread::sleep(Duration::from_millis(1));
+    }
+
+    // 等待子线程结束
+    handle.join().unwrap();
+}
+```
+
+### 共享状态
+
+`Arc<T> (Atomic Reference Counting)`：它是 `Rc<T>` 的线程安全版本。它使用原子操作来保证引用计数在多线程间的安全。
+`Mutex<T> (Mutual Exclusion)`：互斥锁。它允许在任意时刻只有一个线程能修改数据。
+`Arc<Mutex<T>>`：用 `Arc` 在多个线程间共享所有权，用 `Mutex` 保证同一时间只有一个线程修改数据。
+
+```rust
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+fn main() {
+    // 1. 创建一个 Mutex 保护的计数器，并用 Arc 包装以便跨线程共享
+    let counter = Arc::new(Mutex::new(0));
+    let mut handles = vec![];
+
+    for _ in 0..10 {
+        // 2. 克隆 Arc 指针（增加引用计数，不复制数据）
+        let counter = Arc::clone(&counter);
+        
+        let handle = thread::spawn(move || {
+            // 3. 加锁
+            let mut num = counter.lock().unwrap();
+            *num += 1;
+            // 4. 锁在这里自动释放
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Result: {}", *counter.lock().unwrap()); // 输出: Result: 10
+}
+```
+
+## STAGE_7：闭包与迭代器 (Closures & Iterators)
+
+### 闭包
+
+闭包有这些特征：
+
+- 匿名函数：不需要名字，直接定义、直接使用；
+- 可捕获环境：能访问定义它所在作用域的变量；
+- 类型自动推导：参数 / 返回值不需要写类型（这是和函数最大语法区别）；
+- 可存为变量：像普通值一样传递、存储。
+
+闭包的三种捕获方式（类似引用）：
+
+- `Fn`: 仅借用不可变引用（只读）。
+- `FnMut`: 借用可变引用（可修改）。
+- `FnOnce`: 获取所有权（消耗掉捕获的变量）。
+
+```rust
+fn main() {
+    let x = 4;
+    
+    // 闭包捕获了变量 x
+    // || 是参数列表的括号（这里为空），{} 是函数体
+    let equal_to_x = |val| val == x;
+
+    let y = 4;
+    assert!(equal_to_x(y)); // 输出: true
+    
+    println!("{} is equal to {}", y, x);
+}
+```
+
+### 迭代器
+
+对一个集合（如 `Vec` ），有三种获取迭代器的方式，决定了遍历是拿走所有权、只读借用、可变借用。
+
+
+| 方法            | 遍历方式  | 元素类型     | 说明          |
+| ------------- | ----- | -------- | ----------- |
+| `iter()`      | 不可变借用 | `&T`     | 只读，遍历后原数据还在 |
+| `iter_mut()`  | 可变借用  | `&mut T` | 可修改元素       |
+| `into_iter()` | 获取所有权 | `T`      | 遍历后原数据无法再使用 |
+
+
+```rust
+fn main() {
+    let v1 = vec![1, 2, 3, 4, 5, 6];
+
+    // 链式调用：v1.iter() -> filter -> map -> collect
+    let v2: Vec<i32> = v1.iter()
+        .filter(|&x| x % 2 == 0)      // 只保留偶数: 2, 4, 6
+        .map(|x| x + 1)               // 每个数加 1: 3, 5, 7
+        .collect();                   // 收集到 Vec
+
+    println!("{:?}", v2); // 输出: [3, 5, 7]
+}
+```
+
+### 模式匹配进阶
+
+模式匹配的整体结构：
+
+```rust
+match 目标值 {
+    模式1 => 表达式1,
+    模式2 => 表达式2,
+    _ => 默认表达式,
+}
+```
+
+模式能匹配：字面量、枚举、结构体、元组、数组 / 切片、引用、范围、守卫条件（if）、嵌套结构、通配符、忽略符。
+
+```rust
+enum Color {
+    Rgb(i32, i32, i32),
+    Hsv(i32, i32, i32),
+}
+
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let color = Color::Rgb(255, 0, 0);
+    let point = Point { x: 10, y: 20 };
+
+    match color {
+        // 直接解构枚举，并提取值
+        Color::Rgb(r, g, b) => println!("Red: {}, Green: {}, Blue: {}", r, g, b),
+        Color::Hsv(h, s, v) => println!("Hue: {}, Sat: {}, Val: {}", h, s, v),
+    }
+
+    // 匹配结构体
+    match point {
+        // 守卫 (Guard): 额外的 if 条件
+        Point { x, y } if x == 0 => println!("Y is {}, X is on the axis", y),
+        Point { x: 0, y } => println!("X is 0, Y is {}", y), // 指定匹配特定值
+        Point { x, y } => println!("X: {}, Y: {}", x, y),
+    }
+}
+```
+
+当你只关心一种匹配情况，而不想写完整的 `match` 时，使用 `if let`。
+
+```rust
+fn main() {
+    let coin = Some(25); // 假设是 Option<u8>
+
+    // 只有当匹配 Some(u) 时才执行
+    if let Some(u) = coin {
+        println!("Got a coin with value: {}", u);
+    } else {
+        println!("Got nothing");
+    }
+}
+```
